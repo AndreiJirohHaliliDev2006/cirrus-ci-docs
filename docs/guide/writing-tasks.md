@@ -1,45 +1,104 @@
 A `task` defines a sequence of [instructions](#supported-instructions) to execute and an [execution environment](#execution-environment)
 to execute these instructions in. Let's see a line-by-line example of a `.cirrus.yml` configuration file first:
 
-```yaml
-test_task:
-  container:
-    image: gradle:jdk11
-  test_script: gradle test
-```
+=== "amd64"
+
+    ```yaml
+    test_task:
+      container:
+        image: openjdk:latest
+      test_script: ./gradlew test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    test_task:
+      arm_container:
+        image: openjdk:latest
+      test_script: ./gradlew test
+    ```
 
 The example above defines a single task that will be scheduled and executed on the [Linux Community Cluster](linux.md) using the `gradle:jdk11` Docker image.
-Only one user-defined [script instruction](#script-instruction) to run `gradle test` will be executed. Pretty simple, isn't it?
+Only one user-defined [script instruction](#script-instruction) to run `gradle test` will be executed. Not that complex, right?
 
 Please read the topics below if you want better understand what's doing on in a more complex `.cirrus.yml` configuration file, such as this:
 
-```yaml
-# global default
-container:
-  image: node:latest
+=== "amd64"
 
-task:
-  node_modules_cache:
-    folder: node_modules
-    fingerprint_script: cat yarn.lock
-    populate_script: yarn install
-
-  matrix:
-    - name: Lint
-      lint_script: yarn run lint
-    - name: Test
+    ``` {: .yaml .annotate }
+    task:
       container:
-        matrix:
-          - image: node:latest
-          - image: node:lts
-      test_script: yarn run test
-    - name: Publish
-      depends_on:
-        - Lint
-        - Test
-      only_if: $BRANCH == "master"
-      publish_script: yarn run publish
-```
+        image: node:latest # (1)
+    
+      node_modules_cache: # (2)
+        folder: node_modules
+        fingerprint_script: cat yarn.lock
+        populate_script: yarn install
+    
+      matrix: # (3)
+        - name: Lint
+          skip: !changesInclude('.cirrus.yml', '**.{js,ts}') # (4)
+          lint_script: yarn run lint
+        - name: Test
+          container:
+            matrix: # (5)
+              - image: node:latest
+              - image: node:lts
+          test_script: yarn run test
+        - name: Publish
+          depends_on:
+            - Lint
+            - Test
+          only_if: $BRANCH == "master" # (6)
+          publish_script: yarn run publish
+    ```
+
+    1. Use any Docker image from public or [private](linux.md#working-with-private-registries) registries
+    2. Use [cache instruction](#cache-instruction) to persist folders based on an arbitrary `fingerprint_script`.
+    3. Use [`matrix` modification](#matrix-modification) to produce many similar tasks.
+    4. See what kind of files were changes and skip tasks that are not applicable.
+       See [`changesInclude`](#supported-functions) and [`changesIncludeOnly`](#supported-functions) documentation for details.
+    5. Use nested [`matrix` modification](#matrix-modification) to produce even more tasks.
+    6. Completely exclude tasks from execution graph by [any custom condition](#conditional-task-execution).
+
+=== "arm64"
+
+    ``` {: .yaml .annotate }
+    task:
+      arm_container:
+        image: node:latest # (1)
+    
+      node_modules_cache: # (2)
+        folder: node_modules
+        fingerprint_script: cat yarn.lock
+        populate_script: yarn install
+    
+      matrix: # (3)
+        - name: Lint
+          skip: !changesInclude('.cirrus.yml', '**.{js,ts}') # (4)
+          lint_script: yarn run lint
+        - name: Test
+          arm_container:
+            matrix: # (5)
+              - image: node:latest
+              - image: node:lts
+          test_script: yarn run test
+        - name: Publish
+          depends_on:
+            - Lint
+            - Test
+          only_if: $BRANCH == "master" # (6)
+          publish_script: yarn run publish
+    ```
+
+    1. Use any Docker image from public or [private](linux.md#working-with-private-registries) registries
+    2. Use [cache instruction](#cache-instruction) to persist folders based on an arbitrary `fingerprint_script`.
+    3. Use [`matrix` modification](#matrix-modification) to produce many similar tasks.
+    4. See what kind of files were changes and skip tasks that are not applicable.
+       See [`changesInclude`](#supported-functions) and [`changesIncludeOnly`](#supported-functions) documentation for details.
+    5. Use nested [`matrix` modification](#matrix-modification) to produce even more tasks.
+    6. Completely exclude tasks from execution graph by [any custom condition](#conditional-task-execution).
 
 !!! tip "Task Naming"
     To name a task one can use the `name` field. `foo_task` syntax is a syntactic sugar. Separate name
@@ -55,36 +114,43 @@ task:
 
 !!! tip "Visual Task Creation for Beginners"
     If you are just getting started and prefer a more visual way of creating tasks, there
-    is a third-party [Cirrus CI Configuration Builder](https://cirrusbuilder.rdil.rocks) for generating YAML config that might be helpful.
+    is a third-party [Cirrus CI Configuration Builder](https://rdil.rocks/cirrus-builder) for generating YAML config that might be helpful.
 
 ## Execution Environment
 
 In order to specify where to execute a particular task you can choose from a variety of options by defining one of the
 following fields for a `task`:
 
-Field Name                 | Computing Service                                     | Description
--------------------------- | ----------------------------------------------------- | -----------------------
-`container`                | [Linux Community Cluster][container]                  | Linux Docker Container
-`windows_container`        | [Windows Community Cluster][windows_container]        | Windows Docker Container
-`osx_instance`             | [macOS Community Cluster][osx_instance]               | macOS Virtual Machines
-`freebsd_instance`         | [FreeBSD Community Cluster][freebsd_instance]         | FreeBSD Virtual Machines
-`gce_instance`             | [Google Compute Engine][gce_instance]                 | Linux, Windows and FreeBSD Virtual Machines in your GCP project
-`gke_container`            | [Google Kubernetes Engine][gke_container]             | Linux Docker Containers on private GKE cluster
-`ec2_instance`             | [Amazon Elastic Compute Cloud][ec2_instance]          | Linux Virtual Machines in your AWS
-`eks_instance`             | [Amazon Elastic Container Service][eks_instance]      | Linux Docker Containers on private EKS cluster
-`azure_container_instance` | [Azure Container Instances][azure_container_instance] | Linux and Windows Docker Container on Azure
-`anka_instance`            | [Anka Build by Veertu][anka_instance]                 | macOS VMs on your Anka Build
+Field Name                 | Managed by | Description
+-------------------------- | ---------- | -----------------------
+`container`                | **us**     | [Linux Docker Container][container]
+`arm_container`            | **us**     | [Linux Arm Docker Container][container]
+`windows_container`        | **us**     | [Windows Docker Container][windows_container]
+`docker_builder`           | **us**     | [Full-fledged VM pre-configured for running Docker][docker_builder]
+`macos_instance`           | **us**     | [macOS Virtual Machines][macos_instance]
+`freebsd_instance`         | **us**     | [FreeBSD Virtual Machines][freebsd_instance]
+`compute_engine_instance`  | **us**     | [Full-fledged custom VM][compute_engine_instance]
+`persistent_worker`        | **you**    | [Use any host on any platform and architecture][persistent_worker]
+`gce_instance`             | **you**    | [Linux, Windows and FreeBSD Virtual Machines in your GCP project][gce_instance]
+`gke_container`            | **you**    | [Linux Docker Containers on private GKE cluster][gke_container]
+`ec2_instance`             | **you**    | [Linux Virtual Machines in your AWS][ec2_instance]
+`eks_instance`             | **you**    | [Linux Docker Containers on private EKS cluster][eks_instance]
+`azure_container_instance` | **you**    | [Linux and Windows Docker Container on Azure][azure_container_instance]
+`oke_instance`             | **you**    | [Linux x86 and Arm Containers on Oracle Cloud][oke_instance]
 
 [container]: linux.md
 [windows_container]: windows.md
-[osx_instance]: macOS.md
+[docker_builder]: docker-builder-vm.md
+[macos_instance]: macOS.md
 [freebsd_instance]: FreeBSD.md
+[compute_engine_instance]: custom-vms.md
+[persistent_worker]: persistent-workers.md
 [gce_instance]: supported-computing-services.md#compute-engine
 [gke_container]: supported-computing-services.md#kubernetes-engine
 [ec2_instance]: supported-computing-services.md#ec2
 [eks_instance]: supported-computing-services.md#eks
 [azure_container_instance]: supported-computing-services.md#azure-container-instances
-[anka_instance]: supported-computing-services.md#anka
+[oke_instance]: supported-computing-services.md#oracle-cloud
 
 ## Supported Instructions
 
@@ -142,28 +208,69 @@ A `cache` instruction allows to persist a folder and reuse it during the next ex
 
 Here is an example:
 
-```yaml
-test_task:
-  container:
-    image: node:latest
+=== "amd64"
+
+    ```yaml
+    test_task:
+      container:
+        image: node:latest
+      node_modules_cache:
+        folder: node_modules
+        reupload_on_changes: false # since there is a fingerprint script
+        fingerprint_script:
+          - echo $CIRRUS_OS
+          - node --version
+          - cat package-lock.json
+        populate_script: 
+          - npm install
+      test_script: npm run test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    test_task:
+      arm_container:
+        image: node:latest
+      node_modules_cache:
+        folder: node_modules
+        reupload_on_changes: false # since there is a fingerprint script
+        fingerprint_script:
+          - echo $CIRRUS_OS
+          - node --version
+          - cat package-lock.json
+        populate_script: 
+          - npm install
+      test_script: npm run test
+    ```
+
+Either `folder` or a `folders` field (with a list of folder paths) is *required* and they tell the agent which folder paths to cache.
+
+Folder paths should be generally relative to the working directory (e.g. `node_modules`), with the exception of when only a single folder specified. In this case, it can be also an absolute path (`/usr/local/bundle`).
+
+Folder paths can contain a "glob" pattern to cache multiple files/folders within a working directory (e.g. `**/node_modules` will cache every `node_modules` folder within the working directory).
+
+A `fingerprint_script` and `fingerprint_key` are *optional* fields that can specify either:
+
+* a script output of which will be hashed and used as a key for the given cache:
+
+  ```yaml
   node_modules_cache:
     folder: node_modules
-    reupload_on_changes: false # since there is a fingerprint script
-    fingerprint_script:
-      - echo $CIRRUS_OS
-      - node --version
-      - cat package-lock.json
-    populate_script: 
-      - npm install
-  test_script: npm run test
-```
+    fingerprint_script: cat yarn.lock
+  ```
 
-The `folder` is a *required* field that tells the agent which folder to cache. It should be relative to the working directory, or the root directory of the machine (ex. `node_modules` or `/usr/local/bundle`).
+* a final cache key:
 
-A `fingerprint_script` is an *optional* field that can specify a script that will be executed and console output of which
-will be used as a key for the given cache. By default the task name is used as a fingerprint value.
+  ```yaml
+  node_modules_cache:
+    folder: node_modules
+    fingerprint_key: 2038-01-20
+  ```
 
-After the last `script` instruction for the task succeeds, Cirrus CI will calculate checksum of the cached folder (note that it's unrelated to `fingerprint_script` instruction) and re-upload the cache if it finds any changes.
+These two fields are mutually exclusive. By default the task name is used as a fingerprint value.
+
+After the last `script` instruction for the task succeeds, Cirrus CI will calculate checksum of the cached folder (note that it's unrelated to `fingerprint_script` or `fingerprint_key` fields) and re-upload the cache if it finds any changes.
 To avoid a time-costly re-upload, remove volatile files from the cache (for example, in the last `script` instruction of a task).
 
 `populate_script` is an *optional* field that can specify a script that will be executed to populate the cache.
@@ -172,22 +279,38 @@ If your dependencies are updated often, please pay attention to `fingerprint_scr
 
 `reupload_on_changes` is an *optional* field that can specify whether Cirrus Agent should check if 
 contents of cached `folder` have changed during task execution and re-upload a cache entry in case of any changes.
-`reupload_on_changes` option is enabled by default and Cirrus Agent will detect additions, deletions and modifications
-of any files under specified `folder`. All of the detected changes will be logged under `Upload '$CACHE_NAME' cache`instructions for easier debugging of cache invalidations.
+If `reupload_on_changes` option is not set explicitly then it will be set to `false` if `fingerprint_script` or `fingerprint_key` is presented and `true` otherwise.
+Cirrus Agent will detect additions, deletions and modifications of any files under specified `folder`. All of the detected changes will be
+logged under `Upload '$CACHE_NAME' cache` instructions for easier debugging of cache invalidations.
 
 That means the only difference between the example above and below is that `yarn install` will always be executed in the
 example below where in the example above only when `yarn.lock` has changes.
 
-```yaml
-test_task:
-  container:
-    image: node:latest
-  node_modules_cache:
-    folder: node_modules
-    fingerprint_script: cat yarn.lock
-  install_script: yarn install
-  test_script: yarn run test
-```
+=== "amd64"
+
+    ```yaml
+    test_task:
+      container:
+        image: node:latest
+      node_modules_cache:
+        folder: node_modules
+        fingerprint_script: cat yarn.lock
+      install_script: yarn install
+      test_script: yarn run test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    test_task:
+      arm_container:
+        image: node:latest
+      node_modules_cache:
+        folder: node_modules
+        fingerprint_script: cat yarn.lock
+      install_script: yarn install
+      test_script: yarn run test
+    ```
 
 !!! warning "Caching for Pull Requests"
     Tasks for PRs upload caches to a separate caching namespace to not interfere with caches used by other tasks.
@@ -195,13 +318,56 @@ test_task:
 
 !!! warning "Scope of cached artifacts"
     Cache artifacts are shared between tasks, so two caches with the same name on e.g. Linux containers and macOS VMs will share the same set of files.
-    This may introduce binary incompatibility between caches. To avoid that, add `echo $CIRRUS_OS` into `fingerprint_script` which will distinguish caches based on OS.
+    This may introduce binary incompatibility between caches. To avoid that, add `echo $CIRRUS_OS` into `fingerprint_script` or use `$CIRRUS_OS` in `fingerprint_key`, which will distinguish caches based on OS.
+
+#### Manual cache upload
+
+Normally caches are uploaded at the end of the task execution. However, you can override the default behavior and upload them earlier.
+
+To do this, use the `upload_caches` instruction, which uploads a list of caches passed to it once executed:
+
+=== "amd64"
+
+    ```yaml
+    test_task:
+      container:
+        image: node:latest
+      node_modules_cache:
+        folder: node_modules
+      upload_caches:
+        - node_modules
+      install_script: yarn install
+      test_script: yarn run test
+      pip_cache:
+        folder: ~/.cache/pip
+    ```
+
+=== "arm64"
+
+    ```yaml
+    test_task:
+      arm_container:
+        image: node:latest
+      node_modules_cache:
+        folder: node_modules
+      upload_caches:
+        - node_modules
+      install_script: yarn install
+      test_script: yarn run test
+      pip_cache:
+        folder: ~/.cache/pip
+    ```
+
+Note that `pip` cache won't be uploaded in this example: using `upload_caches` disables the default behavior where all caches are automatically uploaded at the end of the task, so if you want to upload `pip` cache too, you'll have to either:
+
+* extend the list of uploaded caches in the first `upload_caches` instruction
+* insert a second `upload_caches` instruction that specifically targets `pip` cache
 
 ### Artifacts Instruction
 
 An `artifacts` instruction allows to store files and expose them in the UI for downloading later. An `artifacts` instruction
 can be named the same way as `script` instruction and has only one required `path` field which accepts a [glob pattern](https://en.wikipedia.org/wiki/Glob_(programming))
-of files relative to `$CIRRUS_WORKING_DIR` to store. Right now only storing files under [`$CIRRUS_WORKING_DIR` folder](#environment-variables) as artifacts is supported.
+of files relative to `$CIRRUS_WORKING_DIR` to store. Right now only storing files under [`$CIRRUS_WORKING_DIR` folder](#environment-variables) as artifacts is supported with a total size limit of 1G for a community task and with no limit on your own infrastructure.
 
 In the example below, *Build and Test* task produces two artifacts: `binaries` artifacts with all executables built during a
 successful task completion and `junit` artifacts with all test reports regardless of the final task status (more about
@@ -215,30 +381,51 @@ build_and_test_task:
   always:
     junit_artifacts:
       path: "**/test-results/**.xml"
-      type: text/xml
       format: junit
 ```
 
-!!! tip "URL to the latest artifacts"
+??? tip "URLs to the artifacts"
+    #### Latest build artifacts
+
     It is possible to refer to the latest artifacts directly (artifacts of the latest **successful** build).
     Use the following link format to download the latest artifact of a particular task:
 
-    ```yaml
-    https://api.cirrus-ci.com/v1/artifact/github/<USER OR ORGANIZATION>/<REPOSITORY>/<TASK NAME>/<ARTIFACTS NAME>/<PATH>
+    ```
+    https://api.cirrus-ci.com/v1/artifact/github/<USER OR ORGANIZATION>/<REPOSITORY>/<TASK NAME>/<ARTIFACTS_NAME>/<PATH>
     ```
 
     It is possible to also **download an archive** of all files within an artifact with the following link:
 
-    ```yaml
-    https://api.cirrus-ci.com/v1/artifact/github/<USER OR ORGANIZATION>/<REPOSITORY>/<TASK NAME>/<ARTIFACTS NAME>.zip
+    ```
+    https://api.cirrus-ci.com/v1/artifact/github/<USER OR ORGANIZATION>/<REPOSITORY>/<TASK NAME>/<ARTIFACTS_NAME>.zip
     ```
     
     By default, Cirrus looks up the latest **successful** build of the default branch for the repository but the branch name
-    can be customized via `?branch=<BRANCH>` query paramter. 
+    can be customized via `?branch=<BRANCH>` query parameter.
+
+    #### Current build artifacts
+
+    It is possible to refer to the artifacts of the current build directly:
+
+    ```
+    https://api.cirrus-ci.com/v1/artifact/build/<CIRRUS_BUILD_ID>/<ARTIFACTS_NAME>.zip
+    ```
+
+    Note that if several tasks are uploading artifacts with the same name then the ZIP archive from the above link will
+    contain merged content of all artifacts. It's also possible to refer to an artifact of a particular task within a build
+    by name:
+
+    ```
+    https://api.cirrus-ci.com/v1/artifact/build/<CIRRUS_BUILD_ID>/<TASK_NAME>/<ARTIFACTS_NAME>.zip
+    ```
+
+    It's also possible to download a particular file of an artifact and not the while archive by using `<ARTIFACTS_NAME>/<PATH>`
+    instead of `<ARTIFACTS_NAME>.zip`.
 
 #### Artifact Type
 
-If you want the Cirrus CI API to return a mimetype other than `application/octet-stream`, for example if you wanted certain files to download in a way you don't need to change the extension for, you can specify the `type` parameter, for example:
+By default, Cirrus CI will try to guess mimetype of files in artifacts by looking at their extensions. In case when artifacts
+don't have extensions, it's possible to explicitly set the `Content-Type` via `type` field:
 
 ```yaml
   my_task:
@@ -267,7 +454,9 @@ Currently, Cirrus CI supports:
 * [GolangCI Lint's JSON format](../examples.md#golangci-lint)
 * [JUnit's XML format](../examples.md#junit)
     * [Python's Unittest format](../examples.md#unittest-annotations)
-  
+* [XCLogParser](../examples.md#xclogparser)
+* [JetBrains Qodana](../examples.md#qodana)
+
 Please [let us know](https://github.com/cirruslabs/cirrus-ci-annotations/issues/new) what kind of formats Cirrus CI should support next!
 
 ### File Instruction
@@ -361,8 +550,9 @@ CIRRUS_CHANGE_MESSAGE | Commit message or PR title and description, depending on
 CIRRUS_CHANGE_TITLE | First line of `CIRRUS_CHANGE_MESSAGE`
 CIRRUS_CRON | [Cron Build](#cron-builds) name if builds was triggered by Cron.
 CIRRUS_DEFAULT_BRANCH | Default repository branch name. For example `master`
+CIRRUS_DOCKER_CONTEXT | Docker build's context directory to use for [Dockerfile as a CI environment](docker-builder-vm.md#dockerfile-as-a-ci-environment). Defaults to project's root directory.
 CIRRUS_LAST_GREEN_BUILD_ID | The build id of the last successful build on the same branch at the time of the current build creation.
-CIRRUS_LAST_GREEN_CHANGE | Corresponding to `CIRRUS_LAST_GREEN_BUILD_ID` SHA (used in [`changesInclude` function](#supported-functions)).
+CIRRUS_LAST_GREEN_CHANGE | Corresponding to `CIRRUS_LAST_GREEN_BUILD_ID` SHA (used in [`changesInclude`](#supported-functions) and [`changesIncludeOnly`](#supported-functions) functions).
 CIRRUS_PR | PR number if current build was triggered by a PR. For example `239`.
 CIRRUS_PR_DRAFT | `true` if current build was triggered by a Draft PR.
 CIRRUS_TAG | Tag name if current build was triggered by a new tag. For example `v1.0`
@@ -379,6 +569,7 @@ CIRRUS_USER_COLLABORATOR | `true` if a user initialized a build is already a con
 CIRRUS_USER_PERMISSION | `admin`, `write`, `read` or `none`.
 CIRRUS_HTTP_CACHE_HOST | Host and port number on which [local HTTP cache](#http-cache) can be accessed on.
 GITHUB_CHECK_SUITE_ID | Monotonically increasing id of a corresponding [GitHub Check Suite](https://help.github.com/en/articles/about-status-checks#checks) which caused the Cirrus CI build.
+CIRRUS_ENV | Path to a file, by writing to which you can [set task-wide environment variables](tips-and-tricks.md#setting-environment-variables-from-scripts).
 
 ### Behavioral Environment Variables
 
@@ -387,7 +578,10 @@ And some environment variables can be set to control behavior of the Cirrus CI A
 Name | Default Value | Description
 ---  | --- | ---
 CIRRUS_CLONE_DEPTH | `0` which will reflect in a full clone of a single branch | Clone depth.
+CIRRUS_CLONE_SUBMODULES | `false` | Set to `true` to clone submodules recursively.
+CIRRUS_LOG_TIMESTAMP | `false` | Indicate Cirrus Agent to prepend timestamp to each line of logs.
 CIRRUS_SHELL | `sh` on Linux/macOS/FreeBSD and `cmd.exe` on Windows. Set to `direct` to execute each script directly without wrapping the commands in a shell script. | Shell that Cirrus CI uses to execute scripts. By default `sh` is used.
+CIRRUS_VOLUME | `/tmp` | Defines a path for a temporary volume to be mounted into instances running in a Kubernetes cluster. This volume is mounted into all additional containers and is persisted between steps of a `pipe`.
 CIRRUS_WORKING_DIR | `cirrus-ci-build` folder inside of a system's temporary folder | Working directory where Cirrus CI executes builds. Default to `cirrus-ci-build` folder inside of a system's temporary folder.
 
 ## Encrypted Variables
@@ -469,71 +663,147 @@ from the original task by replacing the whole `matrix` YAML node with each `matr
 
 Let check an example of a `.cirrus.yml`:
 
-```yaml
-test_task:
-  container:
-    matrix:
-      - image: node:latest
-      - image: node:lts
-  test_script: yarn run test
-```
+=== "amd64"
+
+    ```yaml
+    test_task:
+      container:
+        matrix:
+          - image: node:latest
+          - image: node:lts
+      test_script: yarn run test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    test_task:
+      arm_container:
+        matrix:
+          - image: node:latest
+          - image: node:lts
+      test_script: yarn run test
+    ```
 
 Which will be expanded into:
 
-```yaml
-test_task:
-  container:
-    image: node:latest
-  test_script: yarn run test
+=== "amd64"
 
-test_task:
-  container:
-    image: node:lts
-  test_script: yarn run test
-```
+    ```yaml
+    test_task:
+      container:
+        image: node:latest
+      test_script: yarn run test
+    
+    test_task:
+      container:
+        image: node:lts
+      test_script: yarn run test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    test_task:
+      arm_container:
+        image: node:latest
+      test_script: yarn run test
+    
+    test_task:
+      arm_container:
+        image: node:lts
+      test_script: yarn run test
+    ```
 
 !!! tip
     The `matrix` modifier can be used multiple times within a task.
 
 The `matrix` modification makes it easy to create some pretty complex testing scenarios like this:
 
-```yaml
-task:
-  container:
-    matrix:
-      - image: node:latest
-      - image: node:lts
-  node_modules_cache:
-    folder: node_modules
-    fingerprint_script:
-      - node --version
-      - cat yarn.lock
-    populate_script: yarn install
-  matrix:
-    - name: Build
-      build_script: yarn build
-    - name: Test
-      test_script: yarn run test
-```
+=== "amd64"
+
+    ```yaml
+    task:
+      container:
+        matrix:
+          - image: node:latest
+          - image: node:lts
+      node_modules_cache:
+        folder: node_modules
+        fingerprint_script:
+          - node --version
+          - cat yarn.lock
+        populate_script: yarn install
+      matrix:
+        - name: Build
+          build_script: yarn build
+        - name: Test
+          test_script: yarn run test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    task:
+      arm_container:
+        matrix:
+          - image: node:latest
+          - image: node:lts
+      node_modules_cache:
+        folder: node_modules
+        fingerprint_script:
+          - node --version
+          - cat yarn.lock
+        populate_script: yarn install
+      matrix:
+        - name: Build
+          build_script: yarn build
+        - name: Test
+          test_script: yarn run test
+    ```
 
 ## Task Execution Dependencies
 
 Sometimes it might be very handy to execute some tasks only after successful execution of other tasks. For such cases
 it is possible to specify task names that a particular task depends. Use `depends_on` keyword to define dependencies:
 
-```yaml
-lint_task:
-  script: yarn run lint
+=== "amd64"
 
-test_task:
-  script: yarn run test
+    ```yaml
+    container:
+      image: node:latest
 
-publish_task:
-  depends_on:
-    - test
-    - lint
-  script: yarn run publish
-```
+    lint_task:
+      script: yarn run lint
+    
+    test_task:
+      script: yarn run test
+    
+    publish_task:
+      depends_on:
+        - test
+        - lint
+      script: yarn run publish
+    ```
+
+=== "arm64"
+
+    ```yaml
+    arm_container:
+      image: node:latest
+
+    lint_task:
+      script: yarn run lint
+    
+    test_task:
+      script: yarn run test
+    
+    publish_task:
+      depends_on:
+        - test
+        - lint
+      script: yarn run publish
+    ```
 
 ??? tip "Task Names and Aliases"
     It is possible to specify the task's name via the `name` field. `lint_task` syntax is a syntactic sugar that will be
@@ -615,7 +885,7 @@ Cirrus CI supports the `only_if` and `skip` keywords in order to provide such fl
 <!-- markdownlint-enable MD031 -->
 
 !!! tip "Skip CI Completely"
-    Just include `[skip ci]` or `[ci skip]` in the first line of your commit message in order to skip CI execution for a commit completely.
+    Just include `[skip ci]` or `[skip cirrus]` in the first line of your commit message in order to skip CI execution for a commit completely.
 
     If you push multiple commits at the same time, only the first line of the last commit message will be checked for `[skip ci]`
     or `[ci skip]`.
@@ -634,15 +904,22 @@ Currently only basic operators like `==`, `!=`, `=~`, `!=~`, `&&`, `||` and unar
     check_aggreement_task:
       only_if: $CIRRUS_BRANCH =~ 'pull/.*'
     ```
+    
+    Note that `=~` operator can match against multiline values (dotall mode) and therefore looking for the exact occurrence of the regular expression
+    so don't forget to use `.*` around your term for matching it at any position (for example, `$CIRRUS_CHANGE_TITLE =~ '.*[docs].*'`).
 
 ### Supported Functions
 
-Currently only one function is supported in the `only_if` and `skip` expressions. `changesInclude` function allows to check
-which files were changed. `changesInclude` behaves differently for PR builds and regular builds:
+Currently two functions are supported in the `only_if` and `skip` expressions:
 
-* For PR builds, `changesInclude` will check the list of files affected by the PR.
-* For regular builds, `changesInclude` will use the `CIRRUS_LAST_GREEN_CHANGE` [environment variable](#environment-variables)
-  to determine list of affected files between `CIRRUS_LAST_GREEN_CHANGE` and `CIRRUS_CHANGE_IN_REPO`.
+* `changesInclude` function allows to check which files were changed
+* `changesIncludeOnly` is a more strict version of `changesInclude`, i.e. it won't evaluate to `true` if there are changed files other than the ones covered by patterns
+
+These two functions behave differently for PR builds and regular builds:
+
+* For PR builds, functions check the list of files affected by the PR.
+* For regular builds, the `CIRRUS_LAST_GREEN_CHANGE` [environment variable](#environment-variables)
+  will be used to determine list of affected files between `CIRRUS_LAST_GREEN_CHANGE` and `CIRRUS_CHANGE_IN_REPO`.
 
 `changesInclude` function can be very useful for skipping some tasks when no changes to sources have been made since the
 last successful Cirrus CI build.
@@ -651,6 +928,13 @@ last successful Cirrus CI build.
 lint_task:
   skip: "!changesInclude('.cirrus.yml', '**.{js,ts}')"
   script: yarn run lint
+```
+
+`changesIncludeOnly` function can be used to skip running a heavyweight task if only documentation was changed, for example:
+
+```yaml
+build_task:
+  skip: "changesIncludeOnly('doc/*')"
 ```
 
 ## Auto-Cancellation of Tasks
@@ -668,14 +952,15 @@ task:
 ## Stateful Tasks
 
 It's possible to tell Cirrus CI that a certain task is stateful and Cirrus CI will use a slightly different scheduling algorithm
-to minimize chances of such tasks being interrupted. **Scheduling times of such stateful tasks might be a bit longer then usual.**
+to minimize chances of such tasks being interrupted. Stateful tasks are intended to use low CPU count.
+**Scheduling times of such stateful tasks might be a bit longer then usual especially for tasks with high CPU requirements.**
 
-By default, Cirrus CI marks a task as stateful if it's name contain one of the following terms: `deploy`, `push`, `publish`, 
+By default, Cirrus CI marks a task as stateful if its name contains one of the following terms: `deploy`, `push`, `publish`, 
 `upload` or `release`. Otherwise, you can explicitly mark a task as stateful via `stateful` field:
 
 ```yaml
 task:
-  name: Propogate to Production
+  name: Propagate to Production
   stateful: true
   ...
 ```
@@ -702,7 +987,7 @@ test_nightly_task:
 
 ## Manual tasks
 
-By default a Cirrus CI task is automatically triggered when all it's [dependency tasks](#task-execution-dependencies)
+By default a Cirrus CI task is automatically triggered when all its [dependency tasks](#task-execution-dependencies)
 finished successfully. Sometimes though, it can be very handy to trigger some tasks manually, for example, perform a
 deployment to staging for manual testing upon all automation checks have succeeded. In order change the default behavior
 please use `trigger_type` field like this:
@@ -784,15 +1069,15 @@ supports `GET`, `POST` and `HEAD` requests to upload, download and check presenc
 For example running the following command:
 
 ```bash
-curl -s -X POST --data-binary @myfolder.tar.gz http://$CIRRUS_HTTP_CACHE_HOST/mykey
+curl -s -X POST --data-binary @myfolder.tar.gz http://$CIRRUS_HTTP_CACHE_HOST/name-key
 ```
 
-... has the same effect as a [caching instruction](#cache-instruction) of `myfolder` folder where `sha1sum` of all the
-`myfolder` contents is equal to `mykey`:
+...has the same effect as the following [caching instruction](#cache-instruction):
 
 ```yaml
-myfolder_cache:
+name_cache:
   folder: myfolder
+  fingerprint_key: key
 ```
 
 !!! info
@@ -813,18 +1098,35 @@ should have a unique `name` and specify at least Docker `image` and `port` that 
 In the example below we use an [official MySQL Docker image](https://hub.docker.com/_/mysql/) that exposes
 the standard MySQL port (3306). Tests will be able to access MySQL instance via `localhost:3306`.
 
-```yaml
-container:
-  image: golang:latest
-  additional_containers:
-    - name: mysql
-      image: mysql:latest
-      port: 3306
-      cpu: 1.0
-      memory: 512Mi
-      env:
-        MYSQL_ROOT_PASSWORD: ""
-```
+=== "amd64"
+
+    ```yaml
+    container:
+      image: golang:latest
+      additional_containers:
+        - name: mysql
+          image: mysql:latest
+          port: 3306
+          cpu: 1.0
+          memory: 512Mi
+          env:
+            MYSQL_ROOT_PASSWORD: ""
+    ```
+
+=== "arm64"
+
+    ```yaml
+    arm_container:
+      image: golang:latest
+      additional_containers:
+        - name: mysql
+          image: mysql:latest
+          port: 3306
+          cpu: 1.0
+          memory: 512Mi
+          env:
+            MYSQL_ROOT_PASSWORD: ""
+    ```
 
 Additional container can be very handy in many scenarios. Please check [Cirrus CI catalog of examples](../examples.md) for more details.
 
@@ -835,21 +1137,48 @@ Additional container can be very handy in many scenarios. Please check [Cirrus C
 ??? tip "Port Mapping"
     It's also possible to map ports of additional containers by using `<HOST_PORT>:<CONTAINER_PORT>` format for the `port` field.
     For example, `port: 80:8080` will map port `8080` of the container to be available on local port `80` within a task.
+  
+    **Note:** don't use port mapping unless absolutely necessary. A perfect use case is when you have several additional containers
+    which start the service on the same port and there's no easy way to change that. Port mapping limits 
+    the number of places the container can be scheduled and will affect how fast such tasks are scheduled.
     
+    To specify multiple mappings use the `ports` field, instead of the `port`:
+    ```yaml
+    ports:
+      - 8080
+      - 3306
+    ```
+
 ??? tip "Overriding Default Command"
     It's also possible to override the default `CMD` of an additional container via `command` field:
-    
-    ```yaml
-    container:
-      image: golang:latest
-      additional_containers:
-        - name: mysql
-          image: mysql:latest
-          port: 7777
-          command: mysqld --port 7777
-          env:
-            MYSQL_ROOT_PASSWORD: ""
-    ```
+
+    === "amd64"
+
+        ```yaml
+        container:
+          image: golang:latest
+          additional_containers:
+            - name: mysql
+              image: mysql:latest
+              port: 7777
+              command: mysqld --port 7777
+              env:
+                MYSQL_ROOT_PASSWORD: ""
+        ```
+
+    === "arm64"
+
+        ```yaml
+        arm_container:
+          image: golang:latest
+          additional_containers:
+            - name: mysql
+              image: mysql:latest
+              port: 7777
+              command: mysqld --port 7777
+              env:
+                MYSQL_ROOT_PASSWORD: ""
+        ```
 
 ??? warning
     **Note** that `additional_containers` can be used only with [Community Cluster](supported-computing-services.md#community-cluster)

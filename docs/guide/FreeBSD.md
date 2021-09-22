@@ -1,11 +1,11 @@
 ## FreeBSD Virtual Machines
 
-It is possible to run FreeBSD Virtual Machines the same way one can run [Linux containers](linux.md) on FreeBSD Community Cluster. 
-Simply use `freebsd_instance` in `.cirrus.yml` files:
+It is possible to run FreeBSD Virtual Machines the same way one can run [Linux containers](linux.md) on the FreeBSD Community Cluster. 
+To accomplish this, use `freebsd_instance` in your `.cirrus.yml`:
 
 ```yaml
 freebsd_instance:
-  image_family: freebsd-12-1
+  image_family: freebsd-13-0
 
 task:
   install_script: pkg install -y ...
@@ -13,16 +13,24 @@ task:
 ```
 
 !!! info "Under the Hood"
-    Under the hood a simple integration with [Google Compute Engine](supported-computing-services.md#compute-engine) 
-    is used.
+    Under the hood, a basic integration with [Google Compute Engine](supported-computing-services.md#compute-engine) 
+    is used and `freebsd_instance` is a syntactic sugar for the following [`compute_engine_instance`](custom-vms.md) configuration:
+
+    ```yaml
+    compute_engine_instance:
+      image_project: freebsd-org-cloud-dev
+      image: family/freebsd-13-0
+      platform: freebsd
+    ```
 
 ## List of available image families
 
 Any of the official FreeBSD VMs on Google Cloud Platform are supported. Here are a few of them which are self explanatory:
 
-* `freebsd-13-0-snap` (13.0-CURRENT)
-* `freebsd-12-1-snap` (12.1-STABLE)
-* `freebsd-12-1`      (12.1-RELEASE)
+* `freebsd-14-0-snap` (14.0-SNAP)
+* `freebsd-13-0`      (13.0-RELEASE)
+* `freebsd-12-2-snap` (12.2-SNAP)
+* `freebsd-12-2`      (12.2-RELEASE)
 * `freebsd-12-0`      (12.0-RELEASE)
 * `freebsd-11-4`      (11.4-RELEASE)
 * `freebsd-11-3-snap` (11.3-STABLE)

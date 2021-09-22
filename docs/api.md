@@ -25,13 +25,17 @@ Settings page for a corresponding organization. Here is a direct link to the set
 Once an access token is generated and securely stored, it can be used to authorize API requests by setting `Authorization`
 header to `Bearer $TOKEN`.
 
+!!! note "User API Token Permission Scope"
+    It is also possible to generate API tokens for personal accounts but they will be scoped **only** to access personal public and private repositories
+    of a particular user. It won't be possible to access private repositories of an organization, _even if_ they have access.
+
 ## WebHooks
 
 It is possible to subscribe for updates of builds and tasks. If a WebHook URL is configured on Cirrus CI Settings page for 
 an organization, Cirrus CI will try to `POST` a webhook event payload to this URL.
 
 `POST` request will contain `X-Cirrus-Event` header to specify if the update was made to a `build` or a `task`. The event 
-payload itself is pretty simple:
+payload itself is pretty basic:
 
 ```json
 {
@@ -72,3 +76,25 @@ task(id: $taskId) {
 !!! info "Custom GraphQL Query"
     If you'd like to customize GraphQL query which will be executed and included in the event payload please contact support
     for further details.
+
+### Securing WebHooks
+
+Imagine you've been given a `https://example.com/webhook` endpoint by your administrator, and for some reason there's no easy way to change that. This kind of URL is easily discoverable on the internet, and an attacker can take advantage of this by sending requests to this URL, thus pretending to be the Cirrus CI.
+
+To avoid such situations, set the secret token in the repository settings, and then validate the `X-Cirrus-Signature` for each WebHook request.
+
+Once configured, the secret token and the request's body are fed into the HMAC algorithm to generate the `X-Cirrus-Signature` for each request coming from the Cirrus CI.
+
+!!! attention "Missing X-Cirrus-Signature header"
+    When secret token is configured in the repository settings, all WebHook requests will contain the `X-Cirrus-Signature-Header`. Make sure to assert the presence of `X-Cirrus-Signature-Header` header and correctness of its value in your validation code.
+
+Using HMAC is pretty straightforward in many languages, here's an example of how to validate the `X-Cirrus-Signature` using Python's [`hmac` module](https://docs.python.org/3/library/hmac.html):
+
+```python
+import hmac
+
+def is_signature_valid(secret_token: bytes, body: bytes, x_cirrus_signature: str) -> bool:
+    expected_signature = hmac.new(secret_token, body, "sha256").hexdigest()
+
+    return hmac.compare_digest(expected_signature, x_cirrus_signature)
+```

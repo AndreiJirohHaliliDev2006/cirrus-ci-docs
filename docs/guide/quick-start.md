@@ -24,28 +24,46 @@ In contrast, classic OAuth Apps [don't have such restrictions](https://developer
 Once Cirrus CI is installed for a particular repository, a `.cirrus.yml` configuration file should be added to the root of the repository. 
 The `.cirrus.yml` defines tasks that will be executed for every build for the repository. 
 
-For a simple Node.js project, your `.cirrus.yml` can look like:
+For a Node.js project, your `.cirrus.yml` could look like:
 
-```yaml
-container:
-  image: node:latest
+=== "amd64"
 
-check_task:
-  node_modules_cache:
-    folder: node_modules
-    fingerprint_script: cat yarn.lock
-    populate_script: yarn install
-  test_script: yarn test
-```
+    ```yaml
+    container:
+      image: node:latest
+    
+    check_task:
+      node_modules_cache:
+        folder: node_modules
+        fingerprint_script: cat yarn.lock
+        populate_script: yarn install
+      test_script: yarn test
+    ```
+
+=== "arm64"
+
+    ```yaml
+    arm_container:
+      image: node:latest
+    
+    check_task:
+      node_modules_cache:
+        folder: node_modules
+        fingerprint_script: cat yarn.lock
+        populate_script: yarn install
+      test_script: yarn test
+    ```
 
 That's all! After pushing a `.cirrus.yml` a build with all the tasks defined in the `.cirrus.yml`
 file will be created.
+
+**Note:** Please check the [full guide on configuring Cirrus Tasks](writing-tasks.md) and/or check [a list of available examples](../examples.md).
 
 !!! tip "Zero-config Docker Builds"
     If your repository happened to have a `Dockerfile` in the root, Cirrus CI will attempt to build it even without
     a corresponding `.cirrus.yml` configuration file.
 
-You will see all your Cirrus CI builds on [cirrus-ci.com](https://cirrus-ci.com/) once signing in. 
+You will see all your Cirrus CI builds on [cirrus-ci.com](https://cirrus-ci.com/) once signed in. 
 
 <img src="/assets/images/screenshots/github/recent-builds.png" />
 
@@ -65,11 +83,30 @@ Newly created PRs will also get Cirrus CI's status checks.
     Please check [a high level overview of what's happening under the hood](build-life.md) when a changed is pushed
     and [this guide](writing-tasks.md) to learn more about how to write tasks.
 
+## Authorization on Cirrus CI Web App
+
+All builds created by your account can be viewed on [Cirrus CI Web App](https://cirrus-ci.com/) after signing in with
+your GitHub Account:
+
+<img src="/assets/images/screenshots/github/cirrus-web-sign-in.png" />
+
+After clicking on `Sign In` you'll be redirected to GitHub in order to authorize access:
+
+<img src="/assets/images/screenshots/github/github-app-auth.png" />
+
+!!! note "Note about *Act on your behalf*"
+    Cirrus CI only asks for several kinds of permissions that you can see on [your installation page](https://github.com/apps/cirrus-ci/installations/new).
+    These permissions are read-only except for write access to checks and commit statuses in order for Cirrus CI to
+    be able to report task statuses via checks or commit statuses.
+
+    There is a long thread disscussing this weird "*Act on your behalf*" wording [here](https://github.community/t/why-does-this-forum-need-permission-to-act-on-my-behalf/120453/7)
+    on GitHub's own commuity forum.
+
 ## Enabling New Repositories after Installation
 
-If you choose initially to allow Cirrus CI to access all of your repositories, simply push a `.cirrus.yml` to start
+If you choose initially to allow Cirrus CI to access all of your repositories, all you need to do is push a `.cirrus.yml` to start
 building your repository on Cirrus CI.
 
-If you choose initially to allow Cirrus CI to access only particular repositories, then first add your new repository to
-the list of repositories Cirrus CI has access to via [this page](https://github.com/apps/cirrus-ci/installations/new) and
+If you only allowed Cirrus CI to access certain repositories, then add your new repository to
+the list of repositories Cirrus CI has access to via [this page](https://github.com/apps/cirrus-ci/installations/new),
 then push a `.cirrus.yml` to start building on Cirrus CI.

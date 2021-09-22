@@ -36,6 +36,20 @@ docker_builder:
 !!! info "Example"
     For more examples please check how we use Docker Builder to build and publish Cirrus CI's Docker Images for [Android](https://github.com/cirruslabs/docker-images-android).
 
+### Multi-arch builds
+
+Docker Builder VM has QEMU pre-installed and is able to execute multi-arch builds via [`buildx`](https://docs.docker.com/buildx/working-with-buildx/).
+Add the following `setup_script` to enable `buildx` and then use `docker buildx build` instead of the regular `docker build`:
+
+```yaml
+docker_builder:
+  setup_script:
+    - docker buildx create --name multibuilder
+    - docker buildx use multibuilder
+    - docker buildx inspect --bootstrap
+  build_script: docker buildx build --platform linux/amd64,linux/arm64 --tag myrepo/foo:$CIRRUS_TAG .
+```
+
 ### Pre-installed Packages
 
 For your convenience, a Docker Builder VM has some common packages pre-installed:
@@ -46,6 +60,23 @@ For your convenience, a Docker Builder VM has some common packages pre-installed
 * OpenJDK 11
 * Python
 * Ruby with Bundler
+
+### Under the hood
+
+Under the hood a simple integration with [Google Compute Engine](supported-computing-services.md#compute-engine)
+is used and basically `docker_builder` is a syntactic sugar for the following [`compute_engine_instance`](custom-vms.md) configuration:
+
+```yaml
+task:
+  compute_engine_instance:
+    image_project: cirrus-images
+    image: family/docker-builder
+    platform: linux
+    cpu: 4
+    memory: 16G
+```
+
+You can check Packer templates of the VM image in [`cirruslabs/vm-images` repository](https://github.com/cirruslabs/vm-images).
 
 ### Layer Caching
 
@@ -64,7 +95,7 @@ docker build --cache-from myrepo/foo:latest \
 ### Dockerfile as a CI environment
 
 With Docker Builder there is no need to build and push custom containers so they can be used as an environment to run CI tasks in. 
-Cirrus CI can do it for you! Just declare a path to a `Dockerfile` with the `dockerfile` field for you container 
+Cirrus CI can do it for you! Just declare a path to a `Dockerfile` with the `dockerfile` field for your `container` (`arm_container`s are not supported yet)
 declaration in your `.cirrus.yml` like this:
 
 ```yaml
@@ -90,7 +121,12 @@ Cirrus CI will check if a container was already built, and if so, Cirrus CI will
 Under the hood, for every `Dockerfile` that is needed to be built, Cirrus CI will create a Docker Builder task as a dependency. 
 You will see such `build_docker_image_HASH` tasks in the UI.
 
-!!! info "Using with private GKE clusters"
+!!! warning "Danger of using `COPY` and `ADD` instructions"
+    Cirrus doesn't include files added or copied into a container image in the cache key. This means that for a public repository
+    a potential bad actor can create a PR with malicious scripts included into a container, wait for it to be cached and then
+    reset the PR so it looks harmless.
+
+??? info "Using with private GKE clusters"
     To use `dockerfile` with `gke_container` you first need to create a VM with Docker installed within your GCP project.
     This image will be used to perform building of Docker images for caching. Once this image is available, for example, by 
     `MY_DOCKER_VM` name, you can use it like this:

@@ -1,6 +1,6 @@
 ## Custom Clone Command
 
-By default Cirrus CI uses a [Git client implemented purely in Go](https://github.com/src-d/go-git) to perform a clone of
+By default, Cirrus CI uses a [Git client implemented purely in Go](https://github.com/go-git/go-git) to perform a clone of
 a single branch with full Git history. It is possible to control clone depth via `CIRRUS_CLONE_DEPTH` [environment variable](writing-tasks.md#behavioral-environment-variables).
 
 Customizing clone behavior is a simple as overriding `clone_script`. For example, here an override to use a pre-installed
@@ -21,9 +21,9 @@ task:
 ```
 
 !!! note "`go-git` benefits"
-    Using `go-git` made it possible to not require a pre-installed Git from an execution environment. For example, 
-    most of `alpine`-based containers doesn't have Git pre-installed. Because of `go-git` you can even use distroless 
-    containers with Cirrus CI which don't even have Operation System.
+    Using `go-git` made it possible not to require a pre-installed Git from an execution environment. For example,
+    most of `alpine`-based containers don't have Git pre-installed. Because of `go-git` you can even use distroless
+    containers with Cirrus CI, which don't even have an Operating System.
 
 ## Sharing configuration between tasks
 
@@ -50,7 +50,7 @@ task:
 task:
   << : *REGULAR_TASK_TEMPLATE
   name: osx
-  osx_instance:
+  macos_instance:
     image: catalina-xcode
   test_script: ls -w "${FRAMEWORK_PATH}"
 ```
@@ -66,4 +66,20 @@ ENCRYPTED values:
     GOOGLE_APPLICATION_CREDENTIALS_DATA: "ENCRYPTED\
       [3287dbace8346dfbe98347d1954eca923487fd8ea7251983\
       cb6d5edabdf6fe5abd711238764cbd6efbde6236abd6f274]"
+```
+
+## Setting environment variables from scripts
+
+Even through most of the time you can configure environment variables via [`env`](writing-tasks.md#environment-variables), there are cases when a variable value is obtained only when the task is already running.
+
+Normally you'd use `export` for that, but since each script instruction is executed in a separate shell, the exported variables won't propagate to the next instruction.
+
+However, there's a simple solution: just write your variables in a `KEY=VALUE` format to the file referenced by the `CIRRUS_ENV` environment variable.
+
+Here's a simple example:
+
+```yaml
+task:
+  get_date_script: echo "MEMOIZED_DATE=$(date)" >> $CIRRUS_ENV
+  show_date_script: echo $MEMOIZED_DATE
 ```
